@@ -24,6 +24,12 @@ def log_attendance(name):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         f.write(f"{name},{timestamp}\n")
 
+# Augment face images for training
+def augment_image(img):
+    flipped_img = cv2.flip(img, 1)  # Horizontal flip
+    equalized_img = cv2.equalizeHist(img)  # Histogram equalization
+    return [img, flipped_img, equalized_img]
+
 # Train the face recognizer
 def train_recognizer():
     recognizer = cv2.face.LBPHFaceRecognizer_create()
@@ -40,15 +46,16 @@ def train_recognizer():
             for image_name in os.listdir(person_path):
                 image_path = os.path.join(person_path, image_name)
                 img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-                if img is not None:  # Ensure the image is valid
+                if img is not None:
                     img = cv2.resize(img, image_size)  # Resize to consistent dimensions
-                    faces.append(img)
-                    labels.append(label_counter)
+                    augmented_imgs = augment_image(img)  # Augment images
+                    faces.extend(augmented_imgs)
+                    labels.extend([label_counter] * len(augmented_imgs))
             label_counter += 1
 
     # Convert lists to numpy arrays
-    faces = np.array(faces, dtype="uint8")  # Grayscale images as uint8
-    labels = np.array(labels, dtype="int32")  # Ensure labels are integers
+    faces = np.array(faces, dtype="uint8")
+    labels = np.array(labels, dtype="int32")
 
     # Train the recognizer
     recognizer.train(faces, labels)
@@ -85,15 +92,16 @@ def real_time_recognition():
             break
 
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+        faces = face_cascade.detectMultiScale(gray_frame, scaleFactor=1.2, minNeighbors=6, minSize=(50, 50))
 
         for (x, y, w, h) in faces:
             face = gray_frame[y:y + h, x:x + w]
             face = cv2.resize(face, (100, 100))  # Ensure consistent size
+            face = cv2.equalizeHist(face)  # Normalize face before recognition
             label, confidence = recognizer.predict(face)
             print(f"Detected {label_map.get(str(label), 'Unknown')} with confidence: {confidence}")
 
-            if confidence < 85:  # Adjust threshold as needed
+            if confidence < 85:  # Adjusted threshold
                 name = label_map.get(str(label), "Unknown")
                 if name not in attendance:
                     attendance.append(name)
@@ -108,7 +116,6 @@ def real_time_recognition():
             # Draw bounding box and label
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
             cv2.putText(frame, f"{name} ({int(confidence)}%)", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
 
         cv2.imshow("Real-Time Recognition", frame)
 
